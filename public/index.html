@@ -245,7 +245,17 @@
   const TAMANHO_BLOCO = 256 * 1024;
   let LIMITE_BUFFER = 4 * 1024 * 1024;
   let PRAZO_BUFFER = 20000;
-  let PRAZO_ACK = 30000;
+  let usandoRelay = false;
+  const BASE_ACK_DIRETO = 30000;
+  const BASE_ACK_RELAY = 90000;
+  const MS_POR_MB_DIRETO = 1000;
+  const MS_POR_MB_RELAY = 6000;
+  const PRAZO_ACK_MAXIMO = 20 * 60 * 1000;
+  function calcularPrazoAck(tamanhoBytes) {
+    const base = usandoRelay ? BASE_ACK_RELAY : BASE_ACK_DIRETO;
+    const msPorMB = usandoRelay ? MS_POR_MB_RELAY : MS_POR_MB_DIRETO;
+    return Math.min(base + (tamanhoBytes / (1024 * 1024)) * msPorMB, PRAZO_ACK_MAXIMO);
+  }
   const NUM_CANAIS = 4; // precisa bater com o app do Windows para o protocolo funcionar igual
 
   let roomId = '';
@@ -448,14 +458,14 @@
       tipoConexao.textContent = usaRelay ? 'Via retransmissor' : 'Conexão direta';
       tipoConexao.className = usaRelay ? 'retransmitida' : 'direta';
       if (usaRelay) {
+        usandoRelay = true;
         LIMITE_BUFFER = 1 * 1024 * 1024;
         PRAZO_BUFFER = 60000;
-        PRAZO_ACK = 90000;
         anotar('Via retransmissor — ajustando o ritmo de envio para ser mais tolerante.');
       } else {
+        usandoRelay = false;
         LIMITE_BUFFER = 4 * 1024 * 1024;
         PRAZO_BUFFER = 20000;
-        PRAZO_ACK = 30000;
       }
     } catch (erro) { /* não crítico */ }
   }
@@ -618,7 +628,7 @@
       await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso)));
       canais[0].send(JSON.stringify({ tipo: 'fim' }));
       await new Promise((resolve, reject) => {
-        const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, PRAZO_ACK);
+        const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, calcularPrazoAck(arquivo.size));
         resolverAck = { resolve: () => { clearTimeout(prazo); resolve(); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
       });
       atualizarCartao(cartao, 'enviado', 100, 'ok');
