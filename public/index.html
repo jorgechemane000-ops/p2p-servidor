@@ -600,7 +600,7 @@
     if (typeof dado === 'string') {
       const aviso = JSON.parse(dado);
       if (aviso.tipo === 'inicio') iniciarRecebimento(aviso);
-      if (aviso.tipo === 'ack' && resolverAck) { resolverAck.resolve(); resolverAck = null; }
+      if (aviso.tipo === 'ack' && resolverAck) { resolverAck.resolve(aviso); resolverAck = null; }
       if (aviso.tipo === 'cancelar') cancelarRecebimentoAtual();
     } else {
       receberPedacoBinario(indice, dado);
@@ -628,12 +628,18 @@
       cartao,
       nome: aviso.nome,
       tamanho: aviso.tamanho,
+      hashEsperado: aviso.hash || null,
       dados: new Uint8Array(aviso.tamanho),
       posicoes: partes.map(p => p.inicio),
       totalRecebido: 0,
       mostrarProgresso: progressoComLimite()
     };
     anotar('Recebendo: ' + aviso.nome);
+  }
+
+  async function calcularHashBytes(bytes) {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
   function receberPedacoBinario(indice, dado) {
@@ -649,20 +655,46 @@
 
     if (alvo.totalRecebido >= alvo.tamanho) {
       recebendo = null;
-      const blob = new Blob([alvo.dados]);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = alvo.nome;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      finalizarRecebimento(alvo);
+    }
+  }
 
-      atualizarCartao(alvo.cartao, 'recebido', 100, 'ok');
-      anotar('Arquivo recebido: ' + alvo.nome);
+  // Só depois de confirmar (ou não conseguir verificar) a integridade é que
+  // aciona o download — mesmo assim, salva o arquivo de qualquer forma (só
+  // avisa claramente se ele pode estar corrompido, em vez de escondê-lo).
+  async function finalizarRecebimento(alvo) {
+    let integro = null;
+    if (alvo.hashEsperado) {
+      atualizarCartao(alvo.cartao, 'verificando integridade…', 100);
+      try {
+        const hashReal = await calcularHashBytes(alvo.dados);
+        integro = hashReal === alvo.hashEsperado;
+      } catch (erro) {
+        anotar('Não foi possível verificar a integridade de ' + alvo.nome + ': ' + erro.message);
+      }
+    }
+
+    const blob = new Blob([alvo.dados]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = alvo.nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+
+    if (integro === false) {
+      atualizarCartao(alvo.cartao, 'corrompido — peça para reenviar', null, 'erro');
+      anotar('ALERTA: ' + alvo.nome + ' não passou na verificação de integridade.');
+    } else {
+      atualizarCartao(alvo.cartao, integro === true ? 'recebido ✓ íntegro' : 'recebido', 100, 'ok');
+      anotar('Arquivo recebido: ' + alvo.nome + (integro === true ? ' (integridade confirmada)' : ''));
       notificar('Arquivo recebido', alvo.nome);
-      if (canais[0] && canais[0].readyState === 'open') canais[0].send(JSON.stringify({ tipo: 'ack' }));
+    }
+
+    if (canais[0] && canais[0].readyState === 'open') {
+      canais[0].send(JSON.stringify({ tipo: 'ack', integro: integro !== false }));
     }
   }
 
@@ -899,7 +931,23 @@
     if (botaoPausar) botaoPausar.disabled = false;
 
     const partes = calcularPartes(arquivo.size, NUM_CANAIS);
-    canais[0].send(JSON.stringify({ tipo: 'inicio', nome: arquivo.name, tamanho: arquivo.size, partes: NUM_CANAIS }));
+
+    // Calcula a impressão digital do arquivo antes de mandar. Diferente do
+    // app do Windows (que lê do disco em fluxo), aqui é lido o arquivo
+    // inteiro para a memória por um instante — tudo bem para fotos, vídeos
+    // e documentos comuns; para arquivos enormes isso pode pesar um pouco
+    // mais no navegador do celular.
+    let hashDoArquivo = null;
+    atualizarCartao(cartao, 'calculando verificação…', 0);
+    try {
+      const bufferCompleto = await arquivo.arrayBuffer();
+      hashDoArquivo = await calcularHashBytes(new Uint8Array(bufferCompleto));
+    } catch (erro) {
+      anotar('Não foi possível calcular a verificação de ' + arquivo.name + ': ' + erro.message);
+    }
+    atualizarCartao(cartao, 'enviando…', 0);
+
+    canais[0].send(JSON.stringify({ tipo: 'inicio', nome: arquivo.name, tamanho: arquivo.size, partes: NUM_CANAIS, hash: hashDoArquivo }));
 
     const mostrarProgresso = progressoComLimite();
     let totalEnviado = 0;
@@ -917,10 +965,13 @@
     try {
       await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso, cancelar, pausar)));
       canais[0].send(JSON.stringify({ tipo: 'fim' }));
-      await new Promise((resolve, reject) => {
+      const resultadoAck = await new Promise((resolve, reject) => {
         const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, calcularPrazoAck(arquivo.size));
-        resolverAck = { resolve: () => { clearTimeout(prazo); resolve(); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
+        resolverAck = { resolve: (aviso) => { clearTimeout(prazo); resolve(aviso); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
       });
+      if (resultadoAck && resultadoAck.integro === false) {
+        throw new Error('o arquivo chegou corrompido no destino — tente enviar de novo');
+      }
       atualizarCartao(cartao, 'enviado', 100, 'ok');
       removerControlesDeEnvio();
       marcarConcluidoNaLeva();
