@@ -243,7 +243,9 @@
   };
 
   const TAMANHO_BLOCO = 256 * 1024;
-  const LIMITE_BUFFER = 4 * 1024 * 1024;
+  let LIMITE_BUFFER = 4 * 1024 * 1024;
+  let PRAZO_BUFFER = 20000;
+  let PRAZO_ACK = 30000;
   const NUM_CANAIS = 4; // precisa bater com o app do Windows para o protocolo funcionar igual
 
   let roomId = '';
@@ -445,6 +447,16 @@
       const usaRelay = (local && local.candidateType === 'relay') || (remoto && remoto.candidateType === 'relay');
       tipoConexao.textContent = usaRelay ? 'Via retransmissor' : 'Conexão direta';
       tipoConexao.className = usaRelay ? 'retransmitida' : 'direta';
+      if (usaRelay) {
+        LIMITE_BUFFER = 1 * 1024 * 1024;
+        PRAZO_BUFFER = 60000;
+        PRAZO_ACK = 90000;
+        anotar('Via retransmissor — ajustando o ritmo de envio para ser mais tolerante.');
+      } else {
+        LIMITE_BUFFER = 4 * 1024 * 1024;
+        PRAZO_BUFFER = 20000;
+        PRAZO_ACK = 30000;
+      }
     } catch (erro) { /* não crítico */ }
   }
 
@@ -528,7 +540,7 @@
 
   function esperarBufferLiberar(canal) {
     return new Promise((resolve, reject) => {
-      const prazo = setTimeout(() => { canal.removeEventListener('bufferedamountlow', ouvir); reject(new Error('conexão parece ter caído')); }, 20000);
+      const prazo = setTimeout(() => { canal.removeEventListener('bufferedamountlow', ouvir); reject(new Error('conexão parece ter caído')); }, PRAZO_BUFFER);
       function ouvir() { clearTimeout(prazo); resolve(); }
       canal.addEventListener('bufferedamountlow', ouvir, { once: true });
     });
@@ -606,7 +618,7 @@
       await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso)));
       canais[0].send(JSON.stringify({ tipo: 'fim' }));
       await new Promise((resolve, reject) => {
-        const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, 30000);
+        const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, PRAZO_ACK);
         resolverAck = { resolve: () => { clearTimeout(prazo); resolve(); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
       });
       atualizarCartao(cartao, 'enviado', 100, 'ok');
