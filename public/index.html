@@ -181,6 +181,10 @@
   .item-status { color: var(--tinta-fraca); font-size: 12.5px; flex: none; }
   .item-status.ok { color: var(--ok); }
   .item-status.erro { color: var(--erro); }
+  .item-status.pausado { color: #f5b942; }
+  button.secundario.btn-pausar:hover:not(:disabled) { filter: none; border-color: #f5b942; color: #f5b942; }
+  #resumoFila { font-size: 12.5px; color: var(--tinta-fraca); margin: -2px 0 8px; }
+  #resumoFila:empty { display: none; }
 
   .barra { height: 6px; background: var(--fundo); border-radius: 4px; overflow: hidden; }
   .barra > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--ciano), var(--violeta)); transition: width .15s linear; }
@@ -245,6 +249,7 @@
       <strong>Toque aqui</strong> para escolher fotos, vídeos ou documentos
       <input type="file" id="campoArquivo" multiple style="display:none">
     </div>
+    <div id="resumoFila"></div>
     <div class="lista-arquivos" id="listaEnvio">
       <p class="vazio" id="envioVazio">Nenhum arquivo enviado ainda.</p>
     </div>
@@ -678,9 +683,11 @@
       catch (erro) { if (t === 4) throw erro; await esperarBufferLiberar(canal); }
     }
   }
-  async function enviarParte(arquivo, parte, canal, aoEnviarBytes, cancelar) {
+  async function enviarParte(arquivo, parte, canal, aoEnviarBytes, cancelar, pausar) {
     let posicao = parte.inicio;
     while (posicao < parte.fim) {
+      if (cancelar && cancelar.pedido) throw new Error('cancelado pelo usuário');
+      if (pausar) await pausar.aguardar();
       if (cancelar && cancelar.pedido) throw new Error('cancelado pelo usuário');
       if (canal.bufferedAmount > LIMITE_BUFFER) await esperarBufferLiberar(canal);
       const fim = Math.min(posicao + TAMANHO_BLOCO, parte.fim);
@@ -689,6 +696,27 @@
       posicao += pedaco.byteLength;
       aoEnviarBytes(pedaco.byteLength);
     }
+  }
+
+  // Controle de pausa: compartilhado entre o botão na tela e o laço que
+  // está enviando os bytes. Pausar não é um erro — é só "esperar aqui"
+  // até alguém clicar em Retomar.
+  function criarControlePausa() {
+    let resolver = null;
+    let promessaEspera = null;
+    return {
+      pausado: false,
+      aguardar() {
+        if (!this.pausado) return Promise.resolve();
+        if (!promessaEspera) promessaEspera = new Promise((resolve) => { resolver = resolve; });
+        return promessaEspera;
+      },
+      pausar() { this.pausado = true; },
+      retomar() {
+        this.pausado = false;
+        if (resolver) { resolver(); resolver = null; promessaEspera = null; }
+      }
+    };
   }
 
   // Sobe ou desce um item na fila (direcao: -1 sobe, +1 desce). Só troca
@@ -739,41 +767,96 @@
     if (b) b.remove();
   }
 
+  // --- Resumo geral da fila de envio --------------------------------------
+  let totalNaLeva = 0;
+  let concluidosNaLeva = 0;
+  function atualizarResumoFila() {
+    const resumoFilaEl = el('resumoFila');
+    if (!resumoFilaEl) return;
+    if (totalNaLeva === 0 || concluidosNaLeva >= totalNaLeva) {
+      resumoFilaEl.textContent = '';
+      totalNaLeva = 0;
+      concluidosNaLeva = 0;
+      return;
+    }
+    resumoFilaEl.textContent = `Fila: arquivo ${Math.min(concluidosNaLeva + 1, totalNaLeva)} de ${totalNaLeva}`;
+  }
+  function marcarConcluidoNaLeva() {
+    concluidosNaLeva++;
+    atualizarResumoFila();
+  }
+
+  // Monta os controles (mover, cancelar, pausar) de um item da fila.
+  // Compartilhada entre "arquivo novo" e "tentar novamente".
+  function montarControlesDeItem(item) {
+    const { cartao, cancelar, pausar } = item;
+    cartao.elemento.querySelector('.item-cabecalho').prepend(criarBotoesMover(item));
+
+    const botaoCancelar = document.createElement('button');
+    botaoCancelar.className = 'secundario btn-cancelar';
+    botaoCancelar.textContent = 'Cancelar';
+    botaoCancelar.style.marginTop = '8px';
+
+    const botaoPausar = document.createElement('button');
+    botaoPausar.className = 'secundario btn-pausar';
+    botaoPausar.textContent = '⏸ Pausar';
+    botaoPausar.style.marginTop = '8px';
+    botaoPausar.style.marginLeft = '6px';
+    botaoPausar.disabled = true;
+
+    botaoCancelar.addEventListener('click', () => {
+      cancelar.pedido = true;
+      const posicaoNaFila = filaEnvio.indexOf(item);
+      if (posicaoNaFila !== -1) {
+        filaEnvio.splice(posicaoNaFila, 1);
+        atualizarCartao(cartao, 'cancelado', null, 'erro');
+        botaoCancelar.remove();
+        botaoPausar.remove();
+        desativarMover(cartao);
+        marcarConcluidoNaLeva();
+      } else {
+        botaoCancelar.textContent = 'Cancelando…';
+        botaoCancelar.disabled = true;
+        botaoPausar.disabled = true;
+        if (pausar.pausado) pausar.retomar();
+      }
+    });
+
+    botaoPausar.addEventListener('click', () => {
+      if (pausar.pausado) {
+        pausar.retomar();
+        botaoPausar.textContent = '⏸ Pausar';
+        atualizarCartao(cartao, 'enviando…', null);
+      } else {
+        pausar.pausar();
+        botaoPausar.textContent = '▶ Retomar';
+        atualizarCartao(cartao, 'pausado', null, 'pausado');
+      }
+    });
+
+    cartao.elemento.appendChild(botaoCancelar);
+    cartao.elemento.appendChild(botaoPausar);
+  }
+
   function adicionarArquivosNaFila(arquivos) {
     if (!arquivos || arquivos.length === 0) return;
     envioVazio.style.display = 'none';
     for (const arquivo of arquivos) {
       const cartao = criarCartaoArquivo(arquivo.name, arquivo.size);
       const cancelar = { pedido: false };
-      const item = { arquivo, cartao, cancelar };
+      const pausar = criarControlePausa();
+      const item = { arquivo, cartao, cancelar, pausar };
 
-      cartao.elemento.querySelector('.item-cabecalho').prepend(criarBotoesMover(item));
-
-      const botaoCancelar = document.createElement('button');
-      botaoCancelar.className = 'secundario btn-cancelar';
-      botaoCancelar.textContent = 'Cancelar';
-      botaoCancelar.style.marginTop = '8px';
-      botaoCancelar.addEventListener('click', () => {
-        cancelar.pedido = true;
-        const posicaoNaFila = filaEnvio.indexOf(item);
-        if (posicaoNaFila !== -1) {
-          filaEnvio.splice(posicaoNaFila, 1);
-          atualizarCartao(cartao, 'cancelado', null, 'erro');
-          botaoCancelar.remove();
-          desativarMover(cartao);
-        } else {
-          botaoCancelar.textContent = 'Cancelando…';
-          botaoCancelar.disabled = true;
-        }
-      });
-      cartao.elemento.appendChild(botaoCancelar);
+      montarControlesDeItem(item);
 
       // Topo da lista = próximo a ser enviado (uma fila de verdade); por
       // isso os novos entram no final, não no topo.
       listaEnvio.appendChild(cartao.elemento);
       atualizarCartao(cartao, 'na fila…', 0);
       filaEnvio.push(item);
+      totalNaLeva++;
     }
+    atualizarResumoFila();
     processarFila();
   }
 
@@ -790,27 +873,9 @@
       atualizarCartao(cartao, 'na fila…', 0);
 
       const cancelar = { pedido: false };
-      const item = { arquivo, cartao, cancelar };
-      cartao.elemento.querySelector('.item-cabecalho').prepend(criarBotoesMover(item));
-
-      const botaoCancelar = document.createElement('button');
-      botaoCancelar.className = 'secundario btn-cancelar';
-      botaoCancelar.textContent = 'Cancelar';
-      botaoCancelar.style.marginTop = '8px';
-      botaoCancelar.addEventListener('click', () => {
-        cancelar.pedido = true;
-        const posicaoNaFila = filaEnvio.indexOf(item);
-        if (posicaoNaFila !== -1) {
-          filaEnvio.splice(posicaoNaFila, 1);
-          atualizarCartao(cartao, 'cancelado', null, 'erro');
-          botaoCancelar.remove();
-          desativarMover(cartao);
-        } else {
-          botaoCancelar.textContent = 'Cancelando…';
-          botaoCancelar.disabled = true;
-        }
-      });
-      cartao.elemento.appendChild(botaoCancelar);
+      const pausar = criarControlePausa();
+      const item = { arquivo, cartao, cancelar, pausar };
+      montarControlesDeItem(item);
 
       filaEnvio.push(item);
       processarFila();
@@ -827,9 +892,11 @@
     const proximo = filaEnvio.shift();
     if (!proximo) return;
     enviandoAgora = true;
-    const { arquivo, cartao, cancelar } = proximo;
+    const { arquivo, cartao, cancelar, pausar } = proximo;
     atualizarCartao(cartao, 'enviando…', 0);
     desativarMover(cartao); // já saiu da fila — não faz mais sentido mover
+    const botaoPausar = cartao.elemento.querySelector('.btn-pausar');
+    if (botaoPausar) botaoPausar.disabled = false;
 
     const partes = calcularPartes(arquivo.size, NUM_CANAIS);
     canais[0].send(JSON.stringify({ tipo: 'inicio', nome: arquivo.name, tamanho: arquivo.size, partes: NUM_CANAIS }));
@@ -840,26 +907,30 @@
       totalEnviado += bytes;
       mostrarProgresso(cartao, 'enviando', Math.round((totalEnviado / arquivo.size) * 100));
     };
-    const removerBotaoCancelar = () => {
-      const b = cartao.elemento.querySelector('.btn-cancelar');
-      if (b) b.remove();
+    const removerControlesDeEnvio = () => {
+      const c = cartao.elemento.querySelector('.btn-cancelar');
+      if (c) c.remove();
+      const p = cartao.elemento.querySelector('.btn-pausar');
+      if (p) p.remove();
     };
 
     try {
-      await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso, cancelar)));
+      await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso, cancelar, pausar)));
       canais[0].send(JSON.stringify({ tipo: 'fim' }));
       await new Promise((resolve, reject) => {
         const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, calcularPrazoAck(arquivo.size));
         resolverAck = { resolve: () => { clearTimeout(prazo); resolve(); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
       });
       atualizarCartao(cartao, 'enviado', 100, 'ok');
-      removerBotaoCancelar();
+      removerControlesDeEnvio();
+      marcarConcluidoNaLeva();
       anotar('Enviado: ' + arquivo.name);
       notificar('Arquivo enviado', arquivo.name + ' chegou ao destino.');
     } catch (erro) {
-      removerBotaoCancelar();
+      removerControlesDeEnvio();
       if (erro.message === 'cancelado pelo usuário') {
         atualizarCartao(cartao, 'cancelado', null, 'erro');
+        marcarConcluidoNaLeva();
         anotar('Envio de ' + arquivo.name + ' cancelado.');
         if (canais[0] && canais[0].readyState === 'open') canais[0].send(JSON.stringify({ tipo: 'cancelar' }));
       } else {
