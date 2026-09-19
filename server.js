@@ -1,18 +1,30 @@
 /*
- * server.js — Servidor de Sinalização
+ * server.js — Servidor de Sinalização + hospeda a página web do celular
  *
  * Ele NÃO transfere seus arquivos. Ele só serve de "telefonista":
- * ajuda os dois programas a trocarem os dados de rede necessários
- * para abrirem uma conexão direta (P2P) entre si.
+ * ajuda os dois lados a trocarem os dados de rede necessários para
+ * abrirem uma conexão direta (P2P) entre si.
  *
- * Rodar com:  npm run server
+ * Também serve a pasta "public/" como página web — é o que permite
+ * abrir o Sinapse pelo navegador do celular, sem instalar nada,
+ * usando exatamente o mesmo código de sala do app do Windows.
  */
 
-const PORTA = 3000;
+const path = require('path');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 
-const io = require('socket.io')(PORTA, {
+const app = express();
+const servidorHttp = http.createServer(app);
+const io = new Server(servidorHttp, {
   cors: { origin: '*' }
 });
+
+// Tudo dentro de public/ (a página do celular, o ícone) fica disponível
+// direto pela URL do Render — por exemplo, public/index.html vira a
+// própria página inicial.
+app.use(express.static(path.join(__dirname, 'public')));
 
 io.on('connection', (socket) => {
   console.log('[+] Dispositivo conectado:', socket.id);
@@ -22,7 +34,8 @@ io.on('connection', (socket) => {
     const sala = io.sockets.adapter.rooms.get(roomId);
     const quantidade = sala ? sala.size : 0;
 
-    // Só permitimos 2 pessoas por sala (um envia, outro recebe)
+    // Só permitimos 2 pessoas por sala (um envia, outro recebe) — não
+    // importa se são dois PCs, um PC e um celular, ou dois celulares.
     if (quantidade >= 2) {
       socket.emit('room-full');
       console.log(`[!] Sala "${roomId}" cheia. Recusado: ${socket.id}`);
@@ -58,5 +71,11 @@ io.on('connection', (socket) => {
   });
 });
 
-console.log(`Servidor de sinalização rodando em http://localhost:${PORTA}`);
-console.log('Deixe esta janela aberta enquanto estiver testando. Ctrl+C para parar.');
+// O Render informa a porta certa pela variável de ambiente PORT; 3000 só
+// é usado quando testado localmente no seu PC.
+const PORTA = process.env.PORT || 3000;
+
+servidorHttp.listen(PORTA, () => {
+  console.log(`Servidor de sinalização (e página web) rodando na porta ${PORTA}`);
+  console.log('Deixe esta janela aberta enquanto estiver testando. Ctrl+C para parar.');
+});
