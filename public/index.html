@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Sinapse</title>
+<style>
+  :root {
+    --fundo: #0b0f19;
+    --painel: #131a29;
+    --painel-alto: #182136;
+    --linha: #263049;
+    --tinta: #e7ecf3;
+    --tinta-fraca: #8b97ad;
+    --ciano: #22d3ee;
+    --violeta: #a78bfa;
+    --ok: #34d399;
+    --erro: #f87171;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 28px 26px 34px;
+    background:
+      radial-gradient(circle at 15% -10%, rgba(34,211,238,0.10), transparent 45%),
+      radial-gradient(circle at 100% 0%, rgba(167,139,250,0.10), transparent 40%),
+      var(--fundo);
+    color: var(--tinta);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .cabecalho { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .logo {
+    width: 34px; height: 34px; flex: none;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--ciano), var(--violeta));
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 18px rgba(34,211,238,0.35);
+  }
+  .logo span { width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+
+  h1 {
+    font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.2px;
+    background: linear-gradient(90deg, #f2f6fb, #c6d3ea);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .subtitulo { color: var(--tinta-fraca); margin: 6px 0 22px; font-size: 14px; }
+
+  #estado {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--painel);
+    border: 1px solid var(--linha);
+    border-left: 3px solid var(--tinta-fraca);
+    border-radius: 8px;
+    padding: 13px 16px;
+    font-weight: 600;
+    margin-bottom: 20px;
+  }
+  #estado.ok    { border-left-color: var(--ok);   color: var(--ok); }
+  #estado.erro  { border-left-color: var(--erro); color: var(--erro); }
+  #estado.espera{ border-left-color: var(--ciano); color: var(--ciano); }
+
+  .ponto { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; box-shadow: 0 0 8px currentColor; margin-right: 2px; }
+
+  #tipoConexao {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: var(--painel-alto);
+    color: var(--tinta-fraca);
+  }
+  #tipoConexao.direta { color: var(--ok); }
+  #tipoConexao.retransmitida { color: var(--violeta); }
+  #tipoConexao:empty { display: none; }
+
+  .painel {
+    background: var(--painel);
+    border: 1px solid var(--linha);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .painel h2 { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--tinta-fraca); margin: 0 0 12px; }
+
+  .linha { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+  input[type="text"] {
+    flex: 1 1 200px;
+    min-width: 160px;
+    padding: 9px 11px;
+    background: var(--fundo);
+    border: 1px solid var(--linha);
+    border-radius: 6px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--tinta);
+  }
+  input[type="text"]::placeholder { color: var(--tinta-fraca); }
+  input[type="text"]:focus, button:focus-visible {
+    outline: 2px solid var(--ciano);
+    outline-offset: 1px;
+  }
+
+  button {
+    background: linear-gradient(135deg, var(--ciano), var(--violeta));
+    color: #0b0f19;
+    border: 0;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.08); }
+  button:disabled { background: var(--linha); color: var(--tinta-fraca); cursor: not-allowed; }
+
+  /* Área de arrastar-e-soltar */
+  #dropzone {
+    border: 2px dashed var(--linha);
+    border-radius: 10px;
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--tinta-fraca);
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+  }
+  #dropzone:hover { border-color: var(--ciano); }
+  #dropzone.sobre { border-color: var(--ciano); background: rgba(34,211,238,0.06); color: var(--ciano); }
+  #dropzone strong { color: var(--tinta); }
+  #dropzone.sobre strong { color: var(--ciano); }
+
+  /* Lista de arquivos (envio e recebimento) */
+  .lista-arquivos { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .item-arquivo {
+    background: var(--painel-alto);
+    border: 1px solid var(--linha);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .item-cabecalho {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  .item-nome { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item-status { color: var(--tinta-fraca); font-size: 13px; flex: none; }
+  .item-status.ok { color: var(--ok); }
+  .item-status.erro { color: var(--erro); }
+
+  .barra { height: 6px; background: var(--fundo); border-radius: 4px; overflow: hidden; }
+  .barra > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--ciano), var(--violeta)); transition: width .15s linear; }
+  .item-arquivo.concluido .barra > div { background: var(--ok); }
+  .item-arquivo.falhou .barra > div { background: var(--erro); }
+
+  #registro {
+    font-family: Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--tinta-fraca);
+    background: var(--painel);
+    border: 1px solid var(--linha);
+    border-radius: 8px;
+    padding: 12px 14px;
+    height: 110px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+
+  .vazio { color: var(--tinta-fraca); font-size: 13px; font-style: italic; }
+
+  #rodapeVersao {
+    text-align: center;
+    color: var(--tinta-fraca);
+    font-size: 11.5px;
+    margin-top: 14px;
+    opacity: .65;
+  }
+
+  /* --- Histórico de transferências ------------------------------------- */
+  .painel h2.com-botao { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+
+  button.secundario {
+    background: transparent;
+    border: 1px solid var(--linha);
+    color: var(--tinta-fraca);
+    padding: 4px 11px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 5px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  button.secundario:hover:not(:disabled) { filter: none; border-color: var(--erro); color: var(--erro); }
+  button.secundario:disabled { background: transparent; border-color: var(--linha); }
+
+  #listaHistorico { max-height: 270px; overflow-y: auto; padding-right: 4px; }
+
+  .item-historico {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    background: var(--painel-alto);
+    border: 1px solid var(--linha);
+    border-radius: 8px;
+    padding: 9px 12px;
+  }
+  .seta {
+    width: 27px; height: 27px; flex: none;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .seta.enviado  { background: rgba(167,139,250,0.16); color: var(--violeta); }
+  .seta.recebido { background: rgba(52,211,153,0.16);  color: var(--ok); }
+
+  .hist-info { flex: 1 1 auto; min-width: 0; }
+  .hist-nome { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-detalhe { color: var(--tinta-fraca); font-size: 12.5px; }
+
+  button.mini {
+    flex: none;
+    background: transparent;
+    border: 1px solid var(--linha);
+    color: var(--tinta-fraca);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 5px;
+  }
+  button.mini:hover:not(:disabled) { filter: none; border-color: var(--ciano); color: var(--ciano); }
+</style>
+</head>
+<body>
+
+  <div class="cabecalho">
+    <div class="logo"><span></span></div>
+    <h1>Sinapse</h1>
+  </div>
+  <p class="subtitulo">Os arquivos vão do seu computador para o outro, sem passar pela nuvem — na maioria das vezes de forma direta; quando a rede não permite, por um retransmissor que só repassa os dados, sem guardá-los.</p>
+
+
+  <div id="estado"><span class="ponto"></span><span id="estadoTexto">Iniciando…</span><span id="tipoConexao"></span></div>
+
+  <section class="painel">
+    <h2>1. Entrar numa sala</h2>
+    <p style="color: var(--tinta-fraca); font-size: 13px; margin: -4px 0 12px;">
+      Um código foi gerado para você — compartilhe com a outra pessoa (WhatsApp, por exemplo). Ou cole aqui um código que ela te mandou.
+    </p>
+    <div class="linha">
+      <input type="text" id="campoSala" placeholder="Código combinado, por exemplo: 123" autocomplete="off">
+      <button id="botaoNovoCodigo" class="secundario" type="button" title="Gerar outro código">🔀 Novo</button>
+      <button id="botaoCopiarCodigo" class="secundario" type="button" title="Copiar código">Copiar</button>
+      <button id="botaoConectar">Entrar na sala</button>
+    </div>
+  </section>
+
+  <section class="painel">
+    <h2>2. Enviar arquivos</h2>
+    <div id="dropzone">
+      <strong>Arraste arquivos aqui</strong> ou clique para escolher — pode selecionar vários de uma vez.
+      <input type="file" id="campoArquivo" multiple style="display:none">
+    </div>
+    <div class="lista-arquivos" id="listaEnvio">
+      <p class="vazio" id="envioVazio">Nenhum arquivo enviado ainda.</p>
+    </div>
+  </section>
+
+  <section class="painel">
+    <h2>3. Recebidos</h2>
+    <div class="lista-arquivos" id="listaRecebimento">
+      <p class="vazio" id="recebimentoVazio">Nenhum arquivo recebido ainda. Arquivos recebidos são salvos automaticamente na sua pasta Downloads.</p>
+    </div>
+  </section>
+
+  <section class="painel">
+    <h2 class="com-botao">
+      4. Histórico
+      <button id="botaoLimparHistorico" class="secundario">Limpar histórico</button>
+    </h2>
+    <div class="lista-arquivos" id="listaHistorico"></div>
+  </section>
+
+  <div id="registro"></div>
+  <div id="rodapeVersao"></div>
+
+<script>
+  // Módulos do Node, disponíveis porque nodeIntegration está ligado no main.js
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  // ipcRenderer: conversa com o main.js (para descobrir a pasta de dados).
+  // shell: abre o Explorador do Windows na pasta de um arquivo.
+  const { ipcRenderer, shell, clipboard } = require('electron');
+
+  // Atualize este número sempre que gerar um novo .exe — é o que aparece
+  // no rodapé da tela e ajuda a confirmar, sem precisar checar datas de
+  // arquivo, se duas pessoas estão rodando a mesma versão.
+  const VERSAO_APP = '1.1.0';
+  const DATA_BUILD = '18/09/2026';
+
+  const URL_SERVIDOR = 'https://jorge-p2p-servidor.onrender.com';
+
+  const io = require('socket.io-client');
+  const socket = io(URL_SERVIDOR);
+
+  // STUN: descobre o endereço público de cada computador — resolve a maioria
+  // das conexões, inclusive entre redes domésticas diferentes.
+  // TURN: usado só quando o direto falha (redes com CGNAT, firewalls
+  // restritivos, comum em internet móvel). Nesse caso os dados passam por
+  // este servidor de retransmissão em vez de ir direto de um computador
+  // para o outro. O navegador sempre tenta o caminho direto primeiro.
+  const CONFIG_ICE = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.relay.metered.ca:80' },
+      {
+        urls: 'turn:global.relay.metered.ca:80',
+        username: '8e227d1d87b47de01003f6e5',
+        credential: 'FsNB95PJbBhpY+AF'
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:80?transport=tcp',
+        username: '8e227d1d87b47de01003f6e5',
+        credential: 'FsNB95PJbBhpY+AF'
+      },
+      {
+        urls: 'turn:global.relay.metered.ca:443',
+        username: '8e227d1d87b47de01003f6e5',
+        credential: 'FsNB95PJbBhpY+AF'
+      },
+      {
+        urls: 'turns:global.relay.metered.ca:443?transport=tcp',
+        username: '8e227d1d87b47de01003f6e5',
+        credential: 'FsNB95PJbBhpY+AF'
+      }
+    ]
+  };
+
+  const TAMANHO_BLOCO = 256 * 1024;       // 256 KB por pedaço
+  const LIMITE_BUFFER = 4 * 1024 * 1024;  // bem abaixo do teto de 16MB que o Chromium impõe a cada canal
+  const NUM_CANAIS = 4;                   // canais paralelos — o teto de velocidade é por canal, não da conexão inteira
+
+  let roomId = '';
+  let souIniciador = false;
+  let peerConnection = null;
+  let canais = [];          // um RTCDataChannel por "pista" paralela
+  let canaisAbertos = 0;
+  let candidatosPendentes = [];
+
+  // --- Elementos da tela ------------------------------------------------
+  const el = (id) => document.getElementById(id);
+  const estado = el('estado');
+  const estadoTexto = el('estadoTexto');
+  const tipoConexao = el('tipoConexao');
+  const botaoConectar = el('botaoConectar');
+  const botaoNovoCodigo = el('botaoNovoCodigo');
+  const botaoCopiarCodigo = el('botaoCopiarCodigo');
+  const dropzone = el('dropzone');
+  const campoArquivo = el('campoArquivo');
+  const listaEnvio = el('listaEnvio');
+  const envioVazio = el('envioVazio');
+  const listaRecebimento = el('listaRecebimento');
+  const recebimentoVazio = el('recebimentoVazio');
+  const registro = el('registro');
+  const listaHistorico = el('listaHistorico');
+  const botaoLimparHistorico = el('botaoLimparHistorico');
+
+  function mostrarEstado(texto, tipo = '') {
+    estadoTexto.textContent = texto;
+    estado.className = tipo;
+  }
+
+  // Código de sala aleatório: evita que duas pessoas estranhas usando o
+  // app ao mesmo tempo digitem por coincidência o mesmo código simples
+  // (tipo "123") e acabem conectadas uma à outra sem perceber. O alfabeto
+  // evita 0/O, 1/I/l — fáceis de confundir ao digitar de outro dispositivo.
+  const ALFABETO_CODIGO = 'abcdefghjkmnpqrstuvwxyz23456789';
+  function gerarCodigoAleatorio() {
+    const grupo = () => Array.from({ length: 3 }, () =>
+      ALFABETO_CODIGO[Math.floor(Math.random() * ALFABETO_CODIGO.length)]
+    ).join('');
+    return `${grupo()}-${grupo()}-${grupo()}`;
+  }
+  el('campoSala').value = gerarCodigoAleatorio();
+
+  function anotar(texto) {
+    const hora = new Date().toLocaleTimeString('pt-BR');
+    registro.textContent += `${hora}  ${texto}\n`;
+    registro.scrollTop = registro.scrollHeight;
+  }
+
+  // Notificação nativa do Windows (Central de Ações). Se por algum motivo
+  // o sistema recusar (raro), só registra no log em vez de quebrar o app.
+  const caminhoIconePng = 'file://' + path.join(__dirname, 'build', 'icon.png').replace(/\\/g, '/');
+  function notificar(titulo, corpo) {
+    try {
+      new Notification(titulo, { body: corpo, icon: caminhoIconePng });
+    } catch (erro) {
+      anotar('Não foi possível mostrar a notificação: ' + erro.message);
+    }
+  }
+
+  function formatar(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  // Divide um arquivo em N faixas de bytes contíguas, uma por canal paralelo.
+  function calcularPartes(tamanho, n) {
+    n = Math.max(1, n);
+    const base = Math.floor(tamanho / n);
+    const partes = [];
+    for (let i = 0; i < n; i++) {
+      const inicio = i * base;
+      const fim = (i === n - 1) ? tamanho : inicio + base;
+      partes.push({ inicio, fim });
+    }
+    return partes;
+  }
+
+  // --- Cartão visual de um arquivo (envio ou recebimento) -----------------
+  function criarCartaoArquivo(nome, tamanho) {
+    const cartao = document.createElement('div');
+    cartao.className = 'item-arquivo';
+    cartao.innerHTML = `
+      <div class="item-cabecalho">
+        <span class="item-nome" title="${nome}">${nome}</span>
+        <span class="item-status">${formatar(tamanho)}</span>
+      </div>
+      <div class="barra"><div></div></div>
+    `;
+    return {
+      elemento: cartao,
+      status: cartao.querySelector('.item-status'),
+      barraInterna: cartao.querySelector('.barra > div')
+    };
+  }
+
+  function atualizarCartao(cartao, texto, pct, classe) {
+    cartao.status.textContent = texto;
+    cartao.status.className = 'item-status' + (classe ? ' ' + classe : '');
+    if (pct !== null) cartao.barraInterna.style.width = pct + '%';
+    if (classe === 'ok') cartao.elemento.classList.add('concluido');
+    if (classe === 'erro') cartao.elemento.classList.add('falhou');
+  }
+
+  // Atualizar a tela a cada pedaço recebido/enviado deixa a transferência
+  // mais lenta (cada atualização visual rouba tempo do processador). Esta
+  // função só deixa passar uma atualização a cada ~120ms ou quando o
+  // arquivo termina — o resto do tempo fica livre só para transferir dados.
+  function progressoComLimite() {
+    let ultimoEnvio = 0;
+    return (cartao, prefixo, pct) => {
+      const agora = Date.now();
+      if (pct < 100 && agora - ultimoEnvio < 120) return;
+      ultimoEnvio = agora;
+      atualizarCartao(cartao, `${prefixo}: ${pct}%`, pct);
+    };
+  }
+
+  // --- Histórico de transferências (salvo em disco) -----------------------
+  // Fica em C:\Users\<você>\AppData\Roaming\Sinapse\historico.json
+  // Como é um arquivo de verdade, o histórico continua lá depois de fechar
+  // o app — diferente das listas de "Enviar" e "Recebidos", que são só da
+  // sessão atual e somem quando a janela fecha.
+
+  const LIMITE_HISTORICO = 200; // guarda as 200 transferências mais recentes
+
+  let arquivoHistorico = null; // caminho completo do historico.json
+  let historico = [];          // a lista carregada na memória
+
+  // Nomes de arquivo podem conter caracteres como < > & " que quebrariam o
+  // HTML (ou permitiriam injetar código). Esta função os neutraliza.
+  function escapar(texto) {
+    return String(texto).replace(/[&<>"]/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]
+    ));
+  }
+
+  function formatarData(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Lê o arquivo do disco quando o app abre. É "async" porque precisa
+  // perguntar ao main.js onde fica a pasta de dados.
+  async function iniciarHistorico() {
+    try {
+      const pastaDados = await ipcRenderer.invoke('pasta-dados');
+      if (!fs.existsSync(pastaDados)) fs.mkdirSync(pastaDados, { recursive: true });
+      arquivoHistorico = path.join(pastaDados, 'historico.json');
+
+      if (fs.existsSync(arquivoHistorico)) {
+        const lido = JSON.parse(fs.readFileSync(arquivoHistorico, 'utf8'));
+        if (Array.isArray(lido)) historico = lido;
+      }
+    } catch (erro) {
+      // Arquivo corrompido ou sem permissão: começa vazio em vez de travar o app.
+      historico = [];
+      anotar('Não foi possível ler o histórico: ' + erro.message);
+    }
+    desenharHistorico();
+  }
+
+  function salvarHistorico() {
+    if (!arquivoHistorico) return;
+    try {
+      fs.writeFileSync(arquivoHistorico, JSON.stringify(historico, null, 2), 'utf8');
+    } catch (erro) {
+      anotar('Não foi possível salvar o histórico: ' + erro.message);
+    }
+  }
+
+  function registrarNoHistorico(dados) {
+    historico.unshift({
+      direcao: dados.direcao,          // 'enviado' ou 'recebido'
+      nome: dados.nome,
+      tamanho: dados.tamanho,
+      caminho: dados.caminho || '',    // só nos recebidos
+      sala: roomId || '',
+      quando: new Date().toISOString()
+    });
+    if (historico.length > LIMITE_HISTORICO) historico.length = LIMITE_HISTORICO;
+    salvarHistorico();
+    desenharHistorico();
+  }
+
+  function desenharHistorico() {
+    listaHistorico.innerHTML = '';
+    botaoLimparHistorico.disabled = historico.length === 0;
+
+    if (historico.length === 0) {
+      listaHistorico.innerHTML = '<p class="vazio">Nenhuma transferência concluída ainda. O que você enviar ou receber aparece aqui e continua salvo depois de fechar o app.</p>';
+      return;
+    }
+
+    for (const item of historico) {
+      const recebido = item.direcao === 'recebido';
+      const linha = document.createElement('div');
+      linha.className = 'item-historico';
+      linha.innerHTML = `
+        <div class="seta ${recebido ? 'recebido' : 'enviado'}">${recebido ? '↓' : '↑'}</div>
+        <div class="hist-info">
+          <div class="hist-nome" title="${escapar(item.nome)}">${escapar(item.nome)}</div>
+          <div class="hist-detalhe">
+            ${recebido ? 'Recebido' : 'Enviado'} · ${formatar(item.tamanho)} · ${formatarData(item.quando)}${item.sala ? ' · sala ' + escapar(item.sala) : ''}
+          </div>
+        </div>
+      `;
+
+      if (recebido && item.caminho) {
+        const botao = document.createElement('button');
+        botao.className = 'mini';
+        botao.textContent = 'Abrir pasta';
+        botao.addEventListener('click', () => {
+          if (!fs.existsSync(item.caminho)) {
+            anotar('O arquivo não está mais em ' + item.caminho + ' (foi movido ou apagado).');
+            botao.textContent = 'Não encontrado';
+            botao.disabled = true;
+            return;
+          }
+          shell.showItemInFolder(item.caminho); // abre o Explorador com o arquivo selecionado
+        });
+        linha.appendChild(botao);
+      }
+
+      listaHistorico.appendChild(linha);
+    }
+  }
+
+  botaoLimparHistorico.addEventListener('click', () => {
+    if (!confirm('Apagar todo o histórico de transferências?\n\nIsso não apaga nenhum arquivo do computador, só a lista.')) return;
+    historico = [];
+    salvarHistorico();
+    desenharHistorico();
+    anotar('Histórico apagado.');
+  });
+
+  iniciarHistorico();
+  el('rodapeVersao').textContent = `Sinapse v${VERSAO_APP} · ${DATA_BUILD}`;
+
+  // --- Pasta de downloads e nomes sem colisão -----------------------------
+  function pastaDownloads() {
+    const pasta = path.join(os.homedir(), 'Downloads');
+    if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
+    return pasta;
+  }
+
+  // O nome do arquivo vem da outra pessoa pela rede — nunca confie nele
+  // diretamente. Alguém (por engano ou de propósito) poderia mandar algo
+  // como "../../Something/arquivo.exe" para tentar salvar fora da pasta
+  // Downloads. path.basename() descarta qualquer parte de caminho e fica
+  // só com o nome do arquivo em si, então isso nunca é possível.
+  function nomeSeguro(nomeOriginal) {
+    const limpo = path.basename(String(nomeOriginal || ''));
+    return limpo && limpo !== '.' && limpo !== '..' ? limpo : 'arquivo_sem_nome';
+  }
+
+  function caminhoLivre(nomeOriginal) {
+    const pasta = pastaDownloads();
+    const nome = nomeSeguro(nomeOriginal);
+    const ext = path.extname(nome);
+    const base = path.basename(nome, ext);
+    let candidato = path.join(pasta, nome);
+    let contador = 1;
+    while (fs.existsSync(candidato)) {
+      candidato = path.join(pasta, `${base} (${contador})${ext}`);
+      contador++;
+    }
+    return candidato;
+  }
+
+  // --- Eventos do servidor de sinalização -------------------------------
+  socket.on('connect', () => {
+    mostrarEstado('Pronto. Digite um código de sala.', '');
+    anotar('Ligado ao servidor de sinalização.');
+  });
+
+  socket.on('connect_error', () => {
+    mostrarEstado('Não foi possível ligar ao servidor. Tente novamente em instantes.', 'erro');
+  });
+
+  socket.on('room-full', () => {
+    mostrarEstado('Essa sala já tem duas pessoas. Use outro código.', 'erro');
+  });
+
+  socket.on('joined', (dados) => {
+    souIniciador = dados.isInitiator;
+    anotar(`Entrou na sala "${dados.roomId}" como ${souIniciador ? 'iniciador' : 'convidado'}.`);
+    mostrarEstado('Na sala. Esperando a outra pessoa entrar…', 'espera');
+    criarConexao();
+  });
+
+  socket.on('user-connected', async () => {
+    anotar('A outra pessoa entrou na sala.');
+    if (!souIniciador || !peerConnection) return;
+    mostrarEstado('Abrindo a conexão direta…', 'espera');
+    try {
+      const oferta = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(oferta);
+      socket.emit('signal', { roomId, signal: { sdp: peerConnection.localDescription } });
+    } catch (erro) {
+      anotar('Falha ao criar oferta: ' + erro.message);
+    }
+  });
+
+  socket.on('signal', async (sinal) => {
+    if (!peerConnection) return;
+    try {
+      if (sinal.sdp) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(sinal.sdp));
+        for (const candidato of candidatosPendentes) {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidato));
+        }
+        candidatosPendentes = [];
+        if (sinal.sdp.type === 'offer') {
+          const resposta = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(resposta);
+          socket.emit('signal', { roomId, signal: { sdp: peerConnection.localDescription } });
+        }
+      } else if (sinal.candidate) {
+        if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(sinal.candidate));
+        } else {
+          candidatosPendentes.push(sinal.candidate);
+        }
+      }
+    } catch (erro) {
+      anotar('Erro ao processar sinal: ' + erro.message);
+    }
+  });
+
+  socket.on('user-disconnected', () => {
+    anotar('A outra pessoa saiu.');
+    mostrarEstado('A outra pessoa saiu da sala.', 'erro');
+    tipoConexao.textContent = '';
+    abortarTransferenciasEmAndamento('a outra pessoa saiu da sala');
+  });
+
+  // Chamada quando a conexão cai no meio de uma transferência. Sem isso, um
+  // envio ficaria esperando para sempre por uma confirmação que nunca chega,
+  // e um recebimento ficaria com o arquivo aberto, parado em "recebendo…"
+  // pra sempre — os dois casos travados sem aviso nenhum.
+  function abortarTransferenciasEmAndamento(motivo) {
+    if (resolverAck) {
+      resolverAck.reject(new Error(motivo));
+      resolverAck = null;
+    }
+    if (recebendo) {
+      const alvo = recebendo;
+      recebendo = null;
+      atualizarCartao(alvo.cartao, 'falhou: ' + motivo, null, 'erro');
+      anotar('Recebimento de ' + alvo.nome + ' interrompido: ' + motivo);
+      if (alvo.fd !== null) fs.close(alvo.fd, () => {});
+    }
+  }
+
+  // --- WebRTC ------------------------------------------------------------
+  function criarConexao() {
+    peerConnection = new RTCPeerConnection(CONFIG_ICE);
+    candidatosPendentes = [];
+    canais = new Array(NUM_CANAIS).fill(null);
+    canaisAbertos = 0;
+
+    peerConnection.onicecandidate = (evento) => {
+      if (evento.candidate) {
+        socket.emit('signal', { roomId, signal: { candidate: evento.candidate } });
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      anotar('Estado da conexão: ' + peerConnection.connectionState);
+      if (peerConnection.connectionState === 'failed') {
+        mostrarEstado('A conexão direta falhou. Tente outro código de sala.', 'erro');
+        abortarTransferenciasEmAndamento('a conexão caiu');
+      }
+      if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'closed') {
+        abortarTransferenciasEmAndamento('a conexão foi perdida');
+      }
+      if (peerConnection.connectionState === 'connected') {
+        identificarTipoDeConexao();
+      }
+    };
+
+    if (souIniciador) {
+      for (let i = 0; i < NUM_CANAIS; i++) {
+        const canal = peerConnection.createDataChannel('canal' + i);
+        canais[i] = canal;
+        prepararCanal(canal, i);
+      }
+    } else {
+      peerConnection.ondatachannel = (evento) => {
+        const indice = parseInt(evento.channel.label.replace('canal', ''), 10);
+        canais[indice] = evento.channel;
+        prepararCanal(evento.channel, indice);
+      };
+    }
+  }
+
+  // Depois que a conexão fecha, pergunta ao navegador qual "par de rotas"
+  // venceu. Se qualquer um dos dois lados for do tipo "relay", os dados
+  // estão passando pelo servidor TURN — senão, é conexão direta.
+  async function identificarTipoDeConexao() {
+    try {
+      const relatorios = await peerConnection.getStats();
+      let par = null;
+      relatorios.forEach((r) => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) par = r;
+      });
+      if (!par) return;
+
+      const local = relatorios.get(par.localCandidateId);
+      const remoto = relatorios.get(par.remoteCandidateId);
+      const usaRelay = (local && local.candidateType === 'relay') || (remoto && remoto.candidateType === 'relay');
+
+      tipoConexao.textContent = usaRelay ? 'Via retransmissor' : 'Conexão direta';
+      tipoConexao.className = usaRelay ? 'retransmitida' : 'direta';
+      anotar(usaRelay
+        ? 'Conexão via servidor de retransmissão (TURN) — a rede não permitiu o caminho direto.'
+        : 'Conexão direta estabelecida, sem passar por nenhum servidor intermediário.');
+    } catch (erro) {
+      // Não crítico — só não mostra o selo, mas a transferência continua normal.
+    }
+  }
+
+  // --- Recepção: grava em disco aos poucos, nunca acumula tudo na RAM -----
+  // Como os pedaços chegam por até 4 canais ao mesmo tempo, cada um escreve
+  // na posição certa do arquivo (não é mais só "ir colando no final").
+  let recebendo = null;
+  let resolverAck = null; // { resolve, reject } — usado pelo remetente para esperar confirmação de gravação
+
+  function prepararCanal(canal, indice) {
+    canal.binaryType = 'arraybuffer';
+    canal.bufferedAmountLowThreshold = 256 * 1024;
+
+    canal.onopen = () => {
+      canaisAbertos++;
+      anotar(`Canal ${indice + 1}/${NUM_CANAIS} aberto.`);
+      if (canaisAbertos === NUM_CANAIS) {
+        mostrarEstado('Conexão direta estabelecida.', 'ok');
+      }
+    };
+
+    canal.onclose = () => anotar(`Canal ${indice + 1} fechado.`);
+    canal.onerror = (evento) => anotar('Erro no canal: ' + (evento.error ? evento.error.message : ''));
+    canal.onmessage = (evento) => processarMensagem(indice, evento.data);
+  }
+
+  function processarMensagem(indice, dado) {
+    if (typeof dado === 'string') {
+      const aviso = JSON.parse(dado);
+      if (aviso.tipo === 'inicio') iniciarRecebimento(aviso);
+      if (aviso.tipo === 'ack' && resolverAck) { resolverAck.resolve(); resolverAck = null; }
+      // 'fim' é só um aviso informativo — a finalização real acontece
+      // quando todos os bytes esperados já foram gravados em disco.
+    } else {
+      receberPedacoBinario(indice, dado);
+    }
+  }
+
+  function iniciarRecebimento(aviso) {
+    recebimentoVazio.style.display = 'none';
+    const caminho = caminhoLivre(aviso.nome);
+    const cartao = criarCartaoArquivo(path.basename(caminho), aviso.tamanho);
+    listaRecebimento.prepend(cartao.elemento);
+    atualizarCartao(cartao, 'recebendo…', 0);
+
+    const partes = calcularPartes(aviso.tamanho, aviso.partes || NUM_CANAIS);
+    recebendo = {
+      fd: null,
+      cartao,
+      nome: aviso.nome,
+      tamanho: aviso.tamanho,
+      caminho,
+      posicoes: partes.map((p) => p.inicio),
+      filaAntesDoFd: partes.map(() => []),
+      totalRecebido: 0,
+      pendentes: 0,
+      mostrarProgresso: progressoComLimite()
+    };
+
+    fs.open(caminho, 'w', (erro, fd) => {
+      if (erro) { anotar('Erro ao abrir arquivo para escrita: ' + erro.message); return; }
+      if (!recebendo) return; // já foi finalizado ou cancelado
+      recebendo.fd = fd;
+      const pendentesAntesDoFd = recebendo.filaAntesDoFd;
+      recebendo.filaAntesDoFd = null;
+      pendentesAntesDoFd.forEach((fila, idx) => fila.forEach((buf) => escreverPedaco(idx, buf)));
+      tentarFinalizarRecebimento(recebendo); // cobre o caso raro de arquivo vazio (0 bytes)
+    });
+
+    anotar('Recebendo: ' + aviso.nome);
+  }
+
+  function receberPedacoBinario(indice, dado) {
+    if (!recebendo) return; // pedaço órfão (sinal cruzado), ignora com segurança
+    const buffer = Buffer.from(dado);
+    if (!recebendo.fd) {
+      recebendo.filaAntesDoFd[indice].push(buffer);
+      return;
+    }
+    escreverPedaco(indice, buffer);
+  }
+
+  function escreverPedaco(indice, buffer) {
+    const alvo = recebendo;
+    const posicao = alvo.posicoes[indice];
+    alvo.posicoes[indice] += buffer.length;
+    alvo.totalRecebido += buffer.length;
+    alvo.pendentes++;
+
+    fs.write(alvo.fd, buffer, 0, buffer.length, posicao, (erro) => {
+      alvo.pendentes--;
+      if (erro) {
+        anotar('Erro ao gravar no disco (provavelmente disco cheio ou sem permissão): ' + erro.message);
+        abortarTransferenciasEmAndamento('erro ao gravar em disco: ' + erro.message);
+        return;
+      }
+      tentarFinalizarRecebimento(alvo);
+    });
+
+    const pct = Math.round((alvo.totalRecebido / alvo.tamanho) * 100);
+    alvo.mostrarProgresso(alvo.cartao, 'recebendo', pct);
+  }
+
+  function tentarFinalizarRecebimento(alvo) {
+    if (alvo.totalRecebido < alvo.tamanho || alvo.pendentes > 0) return;
+    if (recebendo === alvo) recebendo = null;
+    fs.close(alvo.fd, () => {
+      atualizarCartao(alvo.cartao, 'salvo em Downloads', 100, 'ok');
+      anotar('Arquivo salvo em: ' + alvo.caminho);
+      notificar('Arquivo recebido', `${alvo.nome} foi salvo em Downloads.`);
+      registrarNoHistorico({
+        direcao: 'recebido',
+        nome: path.basename(alvo.caminho), // nome real salvo (pode ter virado "foto (1).jpg")
+        tamanho: alvo.tamanho,
+        caminho: alvo.caminho
+      });
+      // Só agora avisa quem enviou que pode mandar o próximo arquivo da fila —
+      // garante que este terminou de ser gravado antes de outro começar.
+      if (canais[0] && canais[0].readyState === 'open') {
+        canais[0].send(JSON.stringify({ tipo: 'ack' }));
+      }
+    });
+  }
+
+  // --- Envio: fila de arquivos, um de cada vez, também streaming ----------
+  let filaEnvio = [];
+  let enviandoAgora = false;
+
+  function adicionarArquivosNaFila(arquivos) {
+    if (!arquivos || arquivos.length === 0) return;
+    envioVazio.style.display = 'none';
+
+    for (const arquivo of arquivos) {
+      const cartao = criarCartaoArquivo(arquivo.name, arquivo.size);
+      listaEnvio.prepend(cartao.elemento);
+      atualizarCartao(cartao, 'na fila…', 0);
+      filaEnvio.push({ arquivo, cartao });
+    }
+    processarFila();
+  }
+
+  // Depois de um envio falhar (ex.: conexão caiu no meio), oferece um jeito
+  // de tentar de novo sem precisar arrastar o arquivo outra vez. O arquivo
+  // (objeto File) continua válido em memória, então só recoloca na fila.
+  function adicionarBotaoTentarNovamente(cartao, arquivo) {
+    if (cartao.elemento.querySelector('.btn-tentar-novamente')) return;
+    const botao = document.createElement('button');
+    botao.className = 'mini btn-tentar-novamente';
+    botao.textContent = 'Tentar novamente';
+    botao.style.marginTop = '8px';
+    botao.addEventListener('click', () => {
+      botao.remove();
+      cartao.elemento.classList.remove('falhou');
+      atualizarCartao(cartao, 'na fila…', 0);
+      filaEnvio.push({ arquivo, cartao });
+      processarFila();
+    });
+    cartao.elemento.appendChild(botao);
+  }
+
+  // Espera o canal liberar espaço, mas desiste depois de um tempo em vez
+  // de ficar esperando para sempre — se a conexão caiu no meio do envio,
+  // esse evento nunca chegaria, e a transferência ficaria travada "enviando…"
+  // pra sempre sem avisar ninguém.
+  function esperarBufferLiberar(canal) {
+    return new Promise((resolve, reject) => {
+      const prazo = setTimeout(() => {
+        canal.removeEventListener('bufferedamountlow', ouvir);
+        reject(new Error('conexão parece ter caído (sem resposta do canal)'));
+      }, 20000);
+      function ouvir() { clearTimeout(prazo); resolve(); }
+      canal.addEventListener('bufferedamountlow', ouvir, { once: true });
+    });
+  }
+
+  // Envia um pedaço; se o canal recusar por fila cheia (limite do Chromium),
+  // espera esvaziar um pouco e tenta de novo, em vez de derrubar o envio.
+  async function enviarComRetentativa(canal, pedaco) {
+    for (let tentativa = 0; tentativa < 5; tentativa++) {
+      try {
+        canal.send(pedaco);
+        return;
+      } catch (erro) {
+        if (tentativa === 4) throw erro;
+        await esperarBufferLiberar(canal);
+      }
+    }
+  }
+
+  // Envia a faixa de bytes [parte.inicio, parte.fim) de um arquivo por um único canal.
+  async function enviarParte(arquivo, parte, canal, aoEnviarBytes) {
+    let posicao = parte.inicio;
+    while (posicao < parte.fim) {
+      if (canal.bufferedAmount > LIMITE_BUFFER) {
+        await esperarBufferLiberar(canal);
+      }
+      const fimPedaco = Math.min(posicao + TAMANHO_BLOCO, parte.fim);
+      const pedaco = await arquivo.slice(posicao, fimPedaco).arrayBuffer();
+      await enviarComRetentativa(canal, pedaco);
+      posicao += pedaco.byteLength;
+      aoEnviarBytes(pedaco.byteLength);
+    }
+  }
+
+
+  async function processarFila() {
+    if (enviandoAgora) return;
+    if (canais.length < NUM_CANAIS || !canais.every((c) => c && c.readyState === 'open')) {
+      anotar('Conecte-se primeiro para poder enviar.');
+      return;
+    }
+
+    const proximo = filaEnvio.shift();
+    if (!proximo) return;
+
+    enviandoAgora = true;
+    const { arquivo, cartao } = proximo;
+    atualizarCartao(cartao, 'enviando…', 0);
+
+    const partes = calcularPartes(arquivo.size, NUM_CANAIS);
+    canais[0].send(JSON.stringify({ tipo: 'inicio', nome: arquivo.name, tamanho: arquivo.size, partes: NUM_CANAIS }));
+
+    const mostrarProgresso = progressoComLimite();
+    let totalEnviado = 0;
+    const registrarProgresso = (bytes) => {
+      totalEnviado += bytes;
+      const pct = Math.round((totalEnviado / arquivo.size) * 100);
+      mostrarProgresso(cartao, 'enviando', pct);
+    };
+
+    try {
+      await Promise.all(
+        partes.map((parte, indice) => enviarParte(arquivo, parte, canais[indice], registrarProgresso))
+      );
+      canais[0].send(JSON.stringify({ tipo: 'fim' }));
+
+      // Espera o destinatário confirmar que já gravou tudo em disco antes de
+      // seguir para o próximo arquivo — evita misturar dois arquivos entre si.
+      // Tem um prazo: se a conexão caiu bem na hora final, não fica esperando
+      // uma confirmação que nunca vai chegar.
+      await new Promise((resolve, reject) => {
+        const prazo = setTimeout(() => {
+          resolverAck = null;
+          reject(new Error('o destinatário não confirmou o recebimento a tempo'));
+        }, 30000);
+        resolverAck = {
+          resolve: () => { clearTimeout(prazo); resolve(); },
+          reject: (e) => { clearTimeout(prazo); reject(e); }
+        };
+      });
+
+      atualizarCartao(cartao, 'enviado', 100, 'ok');
+      anotar(`Enviado: ${arquivo.name} (em ${NUM_CANAIS} canais paralelos)`);
+      notificar('Arquivo enviado', `${arquivo.name} chegou ao destino.`);
+      registrarNoHistorico({
+        direcao: 'enviado',
+        nome: arquivo.name,
+        tamanho: arquivo.size
+      });
+    } catch (erro) {
+      atualizarCartao(cartao, 'falhou: ' + erro.message, null, 'erro');
+      anotar('Erro no envio de ' + arquivo.name + ': ' + erro.message);
+      adicionarBotaoTentarNovamente(cartao, arquivo);
+    } finally {
+      enviandoAgora = false;
+      processarFila(); // continua com o próximo da fila, se houver
+    }
+  }
+
+  // --- Ações da tela -------------------------------------------------------
+  botaoConectar.addEventListener('click', () => {
+    const codigo = el('campoSala').value.trim();
+    if (!codigo) {
+      mostrarEstado('Digite um código de sala primeiro.', 'erro');
+      return;
+    }
+    roomId = codigo;
+    botaoConectar.disabled = true;
+    el('campoSala').disabled = true;
+    botaoNovoCodigo.disabled = true;
+    socket.emit('join-room', roomId);
+  });
+
+  botaoNovoCodigo.addEventListener('click', () => {
+    el('campoSala').value = gerarCodigoAleatorio();
+  });
+
+  botaoCopiarCodigo.addEventListener('click', () => {
+    clipboard.writeText(el('campoSala').value.trim());
+    const original = botaoCopiarCodigo.textContent;
+    botaoCopiarCodigo.textContent = 'Copiado!';
+    setTimeout(() => { botaoCopiarCodigo.textContent = original; }, 1500);
+  });
+
+  dropzone.addEventListener('click', () => campoArquivo.click());
+  campoArquivo.addEventListener('change', () => {
+    adicionarArquivosNaFila(Array.from(campoArquivo.files));
+    campoArquivo.value = '';
+  });
+
+  ['dragenter', 'dragover'].forEach((evt) =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.add('sobre'); })
+  );
+  ['dragleave', 'drop'].forEach((evt) =>
+    dropzone.addEventListener(evt, (e) => { e.preventDefault(); dropzone.classList.remove('sobre'); })
+  );
+  dropzone.addEventListener('drop', (e) => {
+    adicionarArquivosNaFila(Array.from(e.dataTransfer.files));
+  });
+</script>
+</body>
+</html>
