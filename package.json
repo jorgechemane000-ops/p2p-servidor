@@ -1,0 +1,13 @@
+{
+  "name": "p2p-servidor",
+  "version": "1.0.0",
+  "description": "Servidor de sinalização do Sinapse (socket.io) e página web para celular",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
