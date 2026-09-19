@@ -134,6 +134,35 @@
     font-weight: 600;
   }
 
+  /* --- Salas recentes ---------------------------------------------------- */
+  .salas-recentes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+  .salas-recentes-titulo { color: var(--tinta-fraca); font-size: 12px; margin-right: 2px; }
+  .chip-sala {
+    background: var(--painel-alto);
+    border: 1px solid var(--linha);
+    color: var(--tinta-fraca);
+    padding: 5px 11px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: Consolas, monospace;
+  }
+
+  /* --- Reordenar a fila (botões, não arrastar — toque em celular não lida
+     bem com a API de arrastar do navegador) ------------------------------ */
+  .botoes-mover { display: flex; flex-direction: column; gap: 3px; flex: none; margin-right: 8px; }
+  .botao-mover {
+    background: var(--painel-alto);
+    border: 1px solid var(--linha);
+    color: var(--tinta-fraca);
+    width: 26px; height: 22px;
+    padding: 0;
+    font-size: 11px;
+    border-radius: 5px;
+    line-height: 1;
+  }
+  .botao-mover:disabled { opacity: .3; }
+
   #dropzone {
     border: 2px dashed var(--linha);
     border-radius: 10px;
@@ -200,6 +229,7 @@
     <div class="linha" style="margin-top: 8px;">
       <button id="botaoConectar" style="width: 100%;">Entrar na sala</button>
     </div>
+    <div class="salas-recentes" id="salasRecentes" style="display:none;"></div>
   </section>
 
   <section class="painel">
@@ -323,6 +353,61 @@
     return `${grupo()}-${grupo()}-${grupo()}`;
   }
   el('campoSala').value = gerarCodigoAleatorio();
+
+  function formatarData(iso) {
+    const d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // --- Salas recentes (lembrete de conveniência, salvo neste navegador) ---
+  // localStorage aqui é por navegador/aparelho — não sincroniza entre o
+  // celular e o PC, cada um guarda a sua própria lista.
+  const SALAS_RECENTES_CHAVE = 'sinapse_salas_recentes';
+  const LIMITE_SALAS_RECENTES = 5;
+
+  function carregarSalasRecentes() {
+    try {
+      const bruto = localStorage.getItem(SALAS_RECENTES_CHAVE);
+      const lista = bruto ? JSON.parse(bruto) : [];
+      return Array.isArray(lista) ? lista : [];
+    } catch (erro) {
+      return [];
+    }
+  }
+
+  function salvarSalaRecente(codigo) {
+    let lista = carregarSalasRecentes().filter((s) => s.codigo !== codigo);
+    lista.unshift({ codigo, quando: new Date().toISOString() });
+    if (lista.length > LIMITE_SALAS_RECENTES) lista.length = LIMITE_SALAS_RECENTES;
+    try { localStorage.setItem(SALAS_RECENTES_CHAVE, JSON.stringify(lista)); } catch (erro) { /* armazenamento cheio/bloqueado — não é crítico */ }
+    desenharSalasRecentes();
+  }
+
+  function desenharSalasRecentes() {
+    const contentor = el('salasRecentes');
+    if (!contentor) return;
+    const lista = carregarSalasRecentes();
+    contentor.innerHTML = '';
+    if (lista.length === 0) { contentor.style.display = 'none'; return; }
+    contentor.style.display = 'flex';
+
+    const titulo = document.createElement('span');
+    titulo.className = 'salas-recentes-titulo';
+    titulo.textContent = 'Recentes:';
+    contentor.appendChild(titulo);
+
+    for (const s of lista) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip-sala';
+      chip.textContent = s.codigo;
+      chip.title = 'Usado em ' + formatarData(s.quando);
+      chip.addEventListener('click', () => { el('campoSala').value = s.codigo; });
+      contentor.appendChild(chip);
+    }
+  }
+  desenharSalasRecentes();
 
   function iconePorTipo(nome) {
     const ext = (nome.split('.').pop() || '').toLowerCase();
@@ -595,6 +680,54 @@
     }
   }
 
+  // Sobe ou desce um item na fila (direcao: -1 sobe, +1 desce). Só troca
+  // com o vizinho imediato — clique repetido move mais casas.
+  function moverNaFila(item, direcao) {
+    const indice = filaEnvio.indexOf(item);
+    if (indice === -1) return;
+    const novoIndice = indice + direcao;
+    if (novoIndice < 0 || novoIndice >= filaEnvio.length) return;
+
+    const outro = filaEnvio[novoIndice];
+    filaEnvio[indice] = outro;
+    filaEnvio[novoIndice] = item;
+
+    const elItem = item.cartao.elemento;
+    const elOutro = outro.cartao.elemento;
+    if (direcao < 0) {
+      listaEnvio.insertBefore(elItem, elOutro);
+    } else {
+      listaEnvio.insertBefore(elOutro, elItem);
+    }
+  }
+
+  function criarBotoesMover(item) {
+    const contentor = document.createElement('div');
+    contentor.className = 'botoes-mover';
+    const cima = document.createElement('button');
+    cima.className = 'botao-mover';
+    cima.type = 'button';
+    cima.textContent = '▲';
+    cima.title = 'Mover para cima na fila';
+    cima.addEventListener('click', () => moverNaFila(item, -1));
+    const baixo = document.createElement('button');
+    baixo.className = 'botao-mover';
+    baixo.type = 'button';
+    baixo.textContent = '▼';
+    baixo.title = 'Mover para baixo na fila';
+    baixo.addEventListener('click', () => moverNaFila(item, 1));
+    contentor.appendChild(cima);
+    contentor.appendChild(baixo);
+    return contentor;
+  }
+
+  // Tira os botões de mover de um cartão que não está mais esperando na
+  // fila (já está enviando, terminou, falhou ou foi cancelado).
+  function desativarMover(cartao) {
+    const b = cartao.elemento.querySelector('.botoes-mover');
+    if (b) b.remove();
+  }
+
   function adicionarArquivosNaFila(arquivos) {
     if (!arquivos || arquivos.length === 0) return;
     envioVazio.style.display = 'none';
@@ -602,6 +735,8 @@
       const cartao = criarCartaoArquivo(arquivo.name, arquivo.size);
       const cancelar = { pedido: false };
       const item = { arquivo, cartao, cancelar };
+
+      cartao.elemento.querySelector('.item-cabecalho').prepend(criarBotoesMover(item));
 
       const botaoCancelar = document.createElement('button');
       botaoCancelar.className = 'secundario btn-cancelar';
@@ -614,6 +749,7 @@
           filaEnvio.splice(posicaoNaFila, 1);
           atualizarCartao(cartao, 'cancelado', null, 'erro');
           botaoCancelar.remove();
+          desativarMover(cartao);
         } else {
           botaoCancelar.textContent = 'Cancelando…';
           botaoCancelar.disabled = true;
@@ -621,7 +757,9 @@
       });
       cartao.elemento.appendChild(botaoCancelar);
 
-      listaEnvio.prepend(cartao.elemento);
+      // Topo da lista = próximo a ser enviado (uma fila de verdade); por
+      // isso os novos entram no final, não no topo.
+      listaEnvio.appendChild(cartao.elemento);
       atualizarCartao(cartao, 'na fila…', 0);
       filaEnvio.push(item);
     }
@@ -639,7 +777,31 @@
       b.remove();
       cartao.elemento.classList.remove('falhou');
       atualizarCartao(cartao, 'na fila…', 0);
-      filaEnvio.push({ arquivo, cartao });
+
+      const cancelar = { pedido: false };
+      const item = { arquivo, cartao, cancelar };
+      cartao.elemento.querySelector('.item-cabecalho').prepend(criarBotoesMover(item));
+
+      const botaoCancelar = document.createElement('button');
+      botaoCancelar.className = 'secundario btn-cancelar';
+      botaoCancelar.textContent = 'Cancelar';
+      botaoCancelar.style.marginTop = '8px';
+      botaoCancelar.addEventListener('click', () => {
+        cancelar.pedido = true;
+        const posicaoNaFila = filaEnvio.indexOf(item);
+        if (posicaoNaFila !== -1) {
+          filaEnvio.splice(posicaoNaFila, 1);
+          atualizarCartao(cartao, 'cancelado', null, 'erro');
+          botaoCancelar.remove();
+          desativarMover(cartao);
+        } else {
+          botaoCancelar.textContent = 'Cancelando…';
+          botaoCancelar.disabled = true;
+        }
+      });
+      cartao.elemento.appendChild(botaoCancelar);
+
+      filaEnvio.push(item);
       processarFila();
     });
     cartao.elemento.appendChild(b);
@@ -656,6 +818,7 @@
     enviandoAgora = true;
     const { arquivo, cartao, cancelar } = proximo;
     atualizarCartao(cartao, 'enviando…', 0);
+    desativarMover(cartao); // já saiu da fila — não faz mais sentido mover
 
     const partes = calcularPartes(arquivo.size, NUM_CANAIS);
     canais[0].send(JSON.stringify({ tipo: 'inicio', nome: arquivo.name, tamanho: arquivo.size, partes: NUM_CANAIS }));
@@ -704,6 +867,7 @@
     const codigo = el('campoSala').value.trim();
     if (!codigo) { mostrarEstado('Digite um código de sala primeiro.', 'erro'); return; }
     roomId = codigo;
+    salvarSalaRecente(codigo);
     el('botaoConectar').disabled = true;
     el('campoSala').disabled = true;
     el('botaoNovoCodigo').disabled = true;
