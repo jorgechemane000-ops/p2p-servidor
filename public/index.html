@@ -225,11 +225,18 @@
       <input type="text" id="campoSala" placeholder="Código da sala" autocomplete="off">
       <button id="botaoNovoCodigo" class="secundario" type="button">🔀 Novo</button>
       <button id="botaoCopiarCodigo" class="secundario" type="button">Copiar</button>
+      <button id="botaoQrCode" class="secundario" type="button">▦ QR</button>
     </div>
     <div class="linha" style="margin-top: 8px;">
       <button id="botaoConectar" style="width: 100%;">Entrar na sala</button>
     </div>
     <div class="salas-recentes" id="salasRecentes" style="display:none;"></div>
+    <div id="areaQrCode" style="display:none; margin-top: 12px; text-align: center;">
+      <div style="display: inline-block; background: #fff; padding: 8px; border-radius: 10px;">
+        <img id="imagemQrCode" width="180" height="180" alt="QR code para entrar na sala">
+      </div>
+      <p style="color: var(--tinta-fraca); font-size: 11.5px; margin: 6px 0 0;">A outra pessoa aponta a câmera e já entra nesta sala.</p>
+    </div>
   </section>
 
   <section class="painel">
@@ -352,7 +359,11 @@
     const grupo = () => Array.from({length:3}, () => ALFABETO_CODIGO[Math.floor(Math.random()*ALFABETO_CODIGO.length)]).join('');
     return `${grupo()}-${grupo()}-${grupo()}`;
   }
-  el('campoSala').value = gerarCodigoAleatorio();
+  // Se a página foi aberta a partir de um QR code (link tipo
+  // "?sala=abc-def-123"), usa esse código pronto em vez de gerar um novo —
+  // é assim que escanear o QR do app do Windows já deixa tudo preenchido.
+  const codigoDaUrl = new URLSearchParams(location.search).get('sala');
+  el('campoSala').value = codigoDaUrl ? codigoDaUrl : gerarCodigoAleatorio();
 
   function formatarData(iso) {
     const d = new Date(iso);
@@ -873,7 +884,10 @@
     el('botaoNovoCodigo').disabled = true;
     socket.emit('join-room', roomId);
   });
-  el('botaoNovoCodigo').addEventListener('click', () => { el('campoSala').value = gerarCodigoAleatorio(); });
+  el('botaoNovoCodigo').addEventListener('click', () => {
+    el('campoSala').value = gerarCodigoAleatorio();
+    atualizarQrCodeSeVisivel();
+  });
   el('botaoCopiarCodigo').addEventListener('click', () => {
     const codigo = el('campoSala').value.trim();
     if (navigator.clipboard) navigator.clipboard.writeText(codigo).catch(() => {});
@@ -882,6 +896,23 @@
     b.textContent = 'Copiado!';
     setTimeout(() => { b.textContent = original; }, 1500);
   });
+
+  // --- QR code (mesmo serviço gratuito de terceiros usado no app do Windows) ---
+  let qrCodeVisivel = false;
+  function atualizarImagemQrCode() {
+    const codigo = el('campoSala').value.trim();
+    if (!codigo) return;
+    const link = location.origin + '/?sala=' + encodeURIComponent(codigo);
+    el('imagemQrCode').src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=8&data=' + encodeURIComponent(link);
+  }
+  function atualizarQrCodeSeVisivel() { if (qrCodeVisivel) atualizarImagemQrCode(); }
+  el('botaoQrCode').addEventListener('click', () => {
+    qrCodeVisivel = !qrCodeVisivel;
+    el('areaQrCode').style.display = qrCodeVisivel ? 'block' : 'none';
+    if (qrCodeVisivel) atualizarImagemQrCode();
+  });
+  el('campoSala').addEventListener('input', atualizarQrCodeSeVisivel);
+
   el('dropzone').addEventListener('click', () => el('campoArquivo').click());
   el('campoArquivo').addEventListener('change', () => {
     adicionarArquivosNaFila(Array.from(el('campoArquivo').files));
