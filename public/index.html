@@ -324,12 +324,24 @@
   }
   el('campoSala').value = gerarCodigoAleatorio();
 
+  function iconePorTipo(nome) {
+    const ext = (nome.split('.').pop() || '').toLowerCase();
+    if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'].includes(ext)) return '🎵';
+    if (['mp4', 'mkv', 'mov', 'avi', 'webm'].includes(ext)) return '🎬';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return '🖼️';
+    if (['pdf'].includes(ext)) return '📕';
+    if (['doc', 'docx', 'odt', 'txt'].includes(ext)) return '📄';
+    if (['xls', 'xlsx', 'csv'].includes(ext)) return '📊';
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return '🗜️';
+    if (['exe', 'msi'].includes(ext)) return '⚙️';
+    return '📦';
+  }
   function criarCartaoArquivo(nome, tamanho) {
     const cartao = document.createElement('div');
     cartao.className = 'item-arquivo';
     cartao.innerHTML = `
       <div class="item-cabecalho">
-        <span class="item-nome" title="${escapar(nome)}">${escapar(nome)}</span>
+        <span class="item-nome" title="${escapar(nome)}">${iconePorTipo(nome)} ${escapar(nome)}</span>
         <span class="item-status">${formatar(tamanho)}</span>
       </div>
       <div class="barra"><div></div></div>
@@ -488,9 +500,18 @@
       const aviso = JSON.parse(dado);
       if (aviso.tipo === 'inicio') iniciarRecebimento(aviso);
       if (aviso.tipo === 'ack' && resolverAck) { resolverAck.resolve(); resolverAck = null; }
+      if (aviso.tipo === 'cancelar') cancelarRecebimentoAtual();
     } else {
       receberPedacoBinario(indice, dado);
     }
+  }
+
+  function cancelarRecebimentoAtual() {
+    if (!recebendo) return;
+    const alvo = recebendo;
+    recebendo = null;
+    atualizarCartao(alvo.cartao, 'cancelado pela outra pessoa', null, 'erro');
+    anotar('A outra pessoa cancelou o envio de ' + alvo.nome + '.');
   }
 
   // --- Recepção: acumula em memória (sem acesso a disco no navegador) e,
@@ -561,9 +582,10 @@
       catch (erro) { if (t === 4) throw erro; await esperarBufferLiberar(canal); }
     }
   }
-  async function enviarParte(arquivo, parte, canal, aoEnviarBytes) {
+  async function enviarParte(arquivo, parte, canal, aoEnviarBytes, cancelar) {
     let posicao = parte.inicio;
     while (posicao < parte.fim) {
+      if (cancelar && cancelar.pedido) throw new Error('cancelado pelo usuário');
       if (canal.bufferedAmount > LIMITE_BUFFER) await esperarBufferLiberar(canal);
       const fim = Math.min(posicao + TAMANHO_BLOCO, parte.fim);
       const pedaco = await arquivo.slice(posicao, fim).arrayBuffer();
@@ -578,9 +600,30 @@
     envioVazio.style.display = 'none';
     for (const arquivo of arquivos) {
       const cartao = criarCartaoArquivo(arquivo.name, arquivo.size);
+      const cancelar = { pedido: false };
+      const item = { arquivo, cartao, cancelar };
+
+      const botaoCancelar = document.createElement('button');
+      botaoCancelar.className = 'secundario btn-cancelar';
+      botaoCancelar.textContent = 'Cancelar';
+      botaoCancelar.style.marginTop = '8px';
+      botaoCancelar.addEventListener('click', () => {
+        cancelar.pedido = true;
+        const posicaoNaFila = filaEnvio.indexOf(item);
+        if (posicaoNaFila !== -1) {
+          filaEnvio.splice(posicaoNaFila, 1);
+          atualizarCartao(cartao, 'cancelado', null, 'erro');
+          botaoCancelar.remove();
+        } else {
+          botaoCancelar.textContent = 'Cancelando…';
+          botaoCancelar.disabled = true;
+        }
+      });
+      cartao.elemento.appendChild(botaoCancelar);
+
       listaEnvio.prepend(cartao.elemento);
       atualizarCartao(cartao, 'na fila…', 0);
-      filaEnvio.push({ arquivo, cartao });
+      filaEnvio.push(item);
     }
     processarFila();
   }
@@ -611,7 +654,7 @@
     const proximo = filaEnvio.shift();
     if (!proximo) return;
     enviandoAgora = true;
-    const { arquivo, cartao } = proximo;
+    const { arquivo, cartao, cancelar } = proximo;
     atualizarCartao(cartao, 'enviando…', 0);
 
     const partes = calcularPartes(arquivo.size, NUM_CANAIS);
@@ -623,21 +666,33 @@
       totalEnviado += bytes;
       mostrarProgresso(cartao, 'enviando', Math.round((totalEnviado / arquivo.size) * 100));
     };
+    const removerBotaoCancelar = () => {
+      const b = cartao.elemento.querySelector('.btn-cancelar');
+      if (b) b.remove();
+    };
 
     try {
-      await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso)));
+      await Promise.all(partes.map((parte, i) => enviarParte(arquivo, parte, canais[i], registrarProgresso, cancelar)));
       canais[0].send(JSON.stringify({ tipo: 'fim' }));
       await new Promise((resolve, reject) => {
         const prazo = setTimeout(() => { resolverAck = null; reject(new Error('o destinatário não confirmou a tempo')); }, calcularPrazoAck(arquivo.size));
         resolverAck = { resolve: () => { clearTimeout(prazo); resolve(); }, reject: (e) => { clearTimeout(prazo); reject(e); } };
       });
       atualizarCartao(cartao, 'enviado', 100, 'ok');
+      removerBotaoCancelar();
       anotar('Enviado: ' + arquivo.name);
       notificar('Arquivo enviado', arquivo.name + ' chegou ao destino.');
     } catch (erro) {
-      atualizarCartao(cartao, 'falhou: ' + erro.message, null, 'erro');
-      anotar('Erro no envio de ' + arquivo.name + ': ' + erro.message);
-      adicionarBotaoTentarNovamente(cartao, arquivo);
+      removerBotaoCancelar();
+      if (erro.message === 'cancelado pelo usuário') {
+        atualizarCartao(cartao, 'cancelado', null, 'erro');
+        anotar('Envio de ' + arquivo.name + ' cancelado.');
+        if (canais[0] && canais[0].readyState === 'open') canais[0].send(JSON.stringify({ tipo: 'cancelar' }));
+      } else {
+        atualizarCartao(cartao, 'falhou: ' + erro.message, null, 'erro');
+        anotar('Erro no envio de ' + arquivo.name + ': ' + erro.message);
+        adicionarBotaoTentarNovamente(cartao, arquivo);
+      }
     } finally {
       enviandoAgora = false;
       processarFila();
