@@ -26,6 +26,63 @@ const io = new Server(servidorHttp, {
 // própria página inicial.
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- Credenciais TURN temporárias -----------------------------------------
+// Em vez de um usuário/senha fixos escritos dentro do app (que qualquer
+// pessoa pode extrair do .exe e usar para sempre), o app pede uma credencial
+// nova aqui toda vez que vai conectar. Essa credencial expira sozinha depois
+// de algumas horas — se alguém conseguir "roubar" uma, ela já não serve pra
+// muita coisa. A chave secreta da Metered.ca fica só aqui no servidor,
+// numa variável de ambiente do Render — nunca é enviada para o app.
+const METERED_APP_NAME = process.env.METERED_APP_NAME;
+const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY;
+const EXPIRACAO_CREDENCIAL_SEGUNDOS = 4 * 60 * 60; // 4 horas — de sobra para uma sessão de uso
+const STUN_PADRAO = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
+
+app.get('/turn-credentials', async (req, res) => {
+  // Sem as duas variáveis configuradas no Render, respondemos só com STUN
+  // (sem TURN) — a conexão direta continua funcionando normalmente; só a
+  // opção de retransmissor fica indisponível até isso ser configurado.
+  if (!METERED_APP_NAME || !METERED_SECRET_KEY) {
+    console.log('[!] METERED_APP_NAME/METERED_SECRET_KEY não configurados — respondendo sem TURN.');
+    return res.json({ iceServers: STUN_PADRAO });
+  }
+
+  try {
+    const resposta = await fetch(
+      `https://${METERED_APP_NAME}.metered.live/api/v1/turn/credential?secretKey=${encodeURIComponent(METERED_SECRET_KEY)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expiryInSeconds: EXPIRACAO_CREDENCIAL_SEGUNDOS,
+          label: 'sinapse-' + Date.now()
+        })
+      }
+    );
+
+    if (!resposta.ok) throw new Error('Metered respondeu HTTP ' + resposta.status);
+    const dados = await resposta.json();
+
+    res.json({
+      iceServers: [
+        ...STUN_PADRAO,
+        { urls: 'turn:global.relay.metered.ca:80', username: dados.username, credential: dados.password },
+        { urls: 'turn:global.relay.metered.ca:80?transport=tcp', username: dados.username, credential: dados.password },
+        { urls: 'turn:global.relay.metered.ca:443', username: dados.username, credential: dados.password },
+        { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: dados.username, credential: dados.password }
+      ]
+    });
+  } catch (erro) {
+    console.error('[!] Erro ao gerar credencial TURN:', erro.message);
+    // Mesmo se a Metered falhar, devolve algo utilizável (só STUN) em vez
+    // de travar a conexão do app inteiro por causa disso.
+    res.json({ iceServers: STUN_PADRAO });
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('[+] Dispositivo conectado:', socket.id);
 
