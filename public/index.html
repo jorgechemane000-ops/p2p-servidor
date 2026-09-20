@@ -186,6 +186,16 @@
   #resumoFila { font-size: 12.5px; color: var(--tinta-fraca); margin: -2px 0 8px; }
   #resumoFila:empty { display: none; }
 
+  .linha-texto-rapido { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--linha); }
+  .linha-texto-rapido input { flex: 1; background: var(--painel-alto); border: 1px solid var(--linha); color: var(--tinta); padding: 8px 11px; border-radius: 8px; font-size: 13.5px; }
+  .linha-texto-rapido input:focus { outline: none; border-color: var(--ciano); }
+
+  .item-texto { background: var(--painel-alto); border: 1px solid var(--linha); border-left: 3px solid var(--ciano); border-radius: 8px; padding: 10px 12px; display: flex; align-items: flex-start; gap: 10px; }
+  .item-texto .conteudo { flex: 1; min-width: 0; word-break: break-word; font-size: 13.5px; }
+  .item-texto .conteudo a { color: var(--ciano); }
+  .item-texto .quando { color: var(--tinta-fraca); font-size: 11px; margin-top: 3px; }
+  .item-texto button { flex: none; }
+
   .barra { height: 6px; background: var(--fundo); border-radius: 4px; overflow: hidden; }
   .barra > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--ciano), var(--violeta)); transition: width .15s linear; }
   .item-arquivo.concluido .barra > div { background: var(--ok); }
@@ -252,6 +262,10 @@
     <div id="resumoFila"></div>
     <div class="lista-arquivos" id="listaEnvio">
       <p class="vazio" id="envioVazio">Nenhum arquivo enviado ainda.</p>
+    </div>
+    <div class="linha-texto-rapido">
+      <input type="text" id="campoTextoRapido" placeholder="Ou mande um texto/link rápido…" maxlength="4000" autocomplete="off">
+      <button id="botaoEnviarTexto" class="secundario" type="button">Enviar</button>
     </div>
   </section>
 
@@ -387,6 +401,74 @@
     const d = new Date(iso);
     if (isNaN(d)) return '';
     return d.toLocaleDateString('pt-BR') + ' às ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // --- Compartilhar texto/link rápido -------------------------------------
+  const LIMITE_TEXTO_RAPIDO = 4000;
+  const REGEX_LINK = /^(https?:\/\/|www\.)\S+$/i;
+
+  function enviarTextoRapido() {
+    const campo = el('campoTextoRapido');
+    const texto = campo.value.trim();
+    if (!texto) return;
+    if (texto.length > LIMITE_TEXTO_RAPIDO) {
+      anotar('Texto muito longo (máximo ' + LIMITE_TEXTO_RAPIDO + ' caracteres).');
+      return;
+    }
+    if (!canais[0] || canais[0].readyState !== 'open') {
+      anotar('Conecte-se com a outra pessoa antes de mandar um texto.');
+      return;
+    }
+    canais[0].send(JSON.stringify({ tipo: 'texto', valor: texto }));
+    campo.value = '';
+    anotar('Texto enviado: ' + (texto.length > 60 ? texto.slice(0, 60) + '…' : texto));
+  }
+
+  el('botaoEnviarTexto').addEventListener('click', enviarTextoRapido);
+  el('campoTextoRapido').addEventListener('keydown', (evento) => {
+    if (evento.key === 'Enter') enviarTextoRapido();
+  });
+
+  function receberTextoRapido(texto) {
+    if (typeof texto !== 'string' || !texto) return;
+    recebimentoVazio.style.display = 'none';
+
+    const ehLink = REGEX_LINK.test(texto.trim());
+    const cartao = document.createElement('div');
+    cartao.className = 'item-texto';
+
+    const conteudo = document.createElement('div');
+    conteudo.className = 'conteudo';
+    if (ehLink) {
+      const link = document.createElement('a');
+      link.href = texto.startsWith('http') ? texto : 'https://' + texto;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = texto;
+      conteudo.appendChild(link);
+    } else {
+      conteudo.textContent = texto;
+    }
+    const quando = document.createElement('div');
+    quando.className = 'quando';
+    quando.textContent = formatarData(new Date().toISOString());
+    conteudo.appendChild(quando);
+
+    const botaoCopiar = document.createElement('button');
+    botaoCopiar.className = 'secundario';
+    botaoCopiar.textContent = 'Copiar';
+    botaoCopiar.addEventListener('click', () => {
+      if (navigator.clipboard) navigator.clipboard.writeText(texto).catch(() => {});
+      botaoCopiar.textContent = 'Copiado!';
+      setTimeout(() => { botaoCopiar.textContent = 'Copiar'; }, 1500);
+    });
+
+    cartao.appendChild(conteudo);
+    cartao.appendChild(botaoCopiar);
+    listaRecebimento.prepend(cartao);
+
+    anotar('Mensagem recebida: ' + (texto.length > 60 ? texto.slice(0, 60) + '…' : texto));
+    notificar('Mensagem recebida', texto.length > 80 ? texto.slice(0, 80) + '…' : texto);
   }
 
   // --- Salas recentes (lembrete de conveniência, salvo neste navegador) ---
@@ -616,6 +698,7 @@
       if (aviso.tipo === 'inicio') iniciarRecebimento(aviso);
       if (aviso.tipo === 'ack' && resolverAck) { resolverAck.resolve(aviso); resolverAck = null; }
       if (aviso.tipo === 'cancelar') cancelarRecebimentoAtual();
+      if (aviso.tipo === 'texto') receberTextoRapido(aviso.valor);
     } else {
       receberPedacoBinario(indice, dado);
     }
